@@ -1,0 +1,100 @@
+name: Run Vertex AI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      pipeline_name:
+        description: 'Name of the pipeline to run'
+        required: true
+        default: 'training-pipeline'
+      region:
+        description: 'GCP region to run the pipeline in'
+        required: true
+        default: 'us-central1'
+      experiment_name:
+        description: 'Vertex AI experiment name'
+        required: true
+        default: 'default-experiment'
+      pipeline_root:
+        description: 'GCS path for pipeline artifacts'
+        required: true
+        default: 'gs://your-bucket/pipeline-root'
+      parameter_values:
+        description: 'JSON string of pipeline parameters'
+        required: false
+        default: '{}'
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ github.event.inputs.region || 'us-central1' }}
+
+jobs:
+  run-vertex-pipeline:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install google-cloud-aiplatform
+
+    - name: Authenticate to Google Cloud
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        token_format: 'access_token'
+        workload_identity_provider: 'projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+        service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Run Vertex AI Pipeline
+      run: |
+        python -c "
+        import json
+        from google.cloud import aiplatform
+
+        # Initialize Vertex AI SDK
+        aiplatform.init(
+            project='${{ env.PROJECT_ID }}',
+            location='${{ env.REGION }}',
+            experiment='${{ github.event.inputs.experiment_name }}'
+        )
+
+        # Get pipeline parameters if provided
+        try:
+            parameter_values = json.loads('${{ github.event.inputs.parameter_values }}')
+        except json.JSONDecodeError:
+            parameter_values = {}
+
+        # Run the pipeline
+        pipeline_job = aiplatform.PipelineJob(
+            display_name='${{ github.event.inputs.pipeline_name }}-${{ github.run_id }}',
+            template_path='pipeline/pipeline.json',  # Path to compiled pipeline JSON
+            pipeline_root='${{ github.event.inputs.pipeline_root }}',
+            parameter_values=parameter_values,
+            enable_caching=True
+        )
+
+        # Submit the pipeline job
+        pipeline_job.submit()
+        
+        print(f'Pipeline job submitted: {pipeline_job.name}')
+        print(f'Pipeline job URL: {pipeline_job.gca_resource.web_access_uris.console}')
+        "

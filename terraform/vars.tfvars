@@ -1,0 +1,11 @@
+project_id        = "mdepew-assets"
+github_repo       = "egen/egen-mlops-accelerator-dev"
+region            = "us-central1"
+pool_id           = "github-pool-mlops"
+provider_id       = "github-provider-mlops"
+service_account_id = "github-actions-sa"
+registry_name     = "mdepew-registry"
+default_region    = "us-central1"
+pipeline_runner_service_account_id = "vertex-pipelines"
+predict_service_account_id = "vertex-predict"
+
